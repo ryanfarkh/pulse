@@ -95,7 +95,7 @@ button { cursor: pointer; }
 
 .rings {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -151,6 +151,37 @@ button { cursor: pointer; }
 .cell.s3 { background: #22c55e; }
 .cell.s4 { background: #86efac; }
 .cell.today { outline: 1px solid #fafafa; }
+
+.prayers {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.prayer {
+  min-height: 76px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 2px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+}
+.prayer .mark { font-size: 18px; line-height: 1; color: var(--dim); }
+.prayer.on {
+  color: #fafafa;
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.2);
+}
+.prayer.on .mark { color: #fbbf24; }
+.prayer:active { transform: scale(0.96); }
 
 .card {
   background: var(--bg-elev);
@@ -430,6 +461,6 @@ textarea, .text {
 }
 
 @media (min-width: 720px) {
-  .rings { grid-template-columns: repeat(4, 1fr); }
+  .rings { grid-template-columns: repeat(6, 1fr); }
   .heatmap { grid-template-rows: repeat(7, 12px); grid-auto-columns: 12px; }
 }

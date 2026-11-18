@@ -13,8 +13,8 @@ import {
   subscribe,
 } from "./store";
 import { computePRs, detectNewPRs } from "./stats";
-import type { ExerciseKey, Goals, Tab } from "./types";
-import { DEFAULT_GOALS } from "./types";
+import type { ExerciseKey, Goals, PrayerKey, Tab } from "./types";
+import { DEFAULT_GOALS, PRAYERS, prayerCount } from "./types";
 import { paintCharts, renderApp, scrollHeatmap, type Ui } from "./ui";
 
 const app = document.getElementById("app")!;
@@ -78,6 +78,19 @@ function bumpSets(ex: ExerciseKey, n: number): void {
     d[ex].sets = clamp(d[ex].sets + n);
   });
   vibrate();
+}
+
+function togglePrayer(key: PrayerKey, source?: Element): void {
+  const before = prayerCount(getDay(ui.date).prayers);
+  const prsBefore = computePRs(getState());
+  patchDay(ui.date, (d) => {
+    d.prayers[key] = !d.prayers[key];
+  });
+  tap(source ?? null);
+  vibrate();
+  const after = prayerCount(getDay(ui.date).prayers);
+  if (before < PRAYERS.length && after === PRAYERS.length) celebrate("Salah complete");
+  maybePr(prsBefore);
 }
 
 function bumpAnki(n: number, source?: Element): void {
@@ -148,6 +161,7 @@ function saveGoals(): void {
     pushups: read("pushups") || DEFAULT_GOALS.pushups,
     pullups: read("pullups") || DEFAULT_GOALS.pullups,
     dips: read("dips") || DEFAULT_GOALS.dips,
+    squats: read("squats") || DEFAULT_GOALS.squats,
     anki: read("anki") || DEFAULT_GOALS.anki,
     weeklyRuns: read("weeklyRuns") || DEFAULT_GOALS.weeklyRuns,
   });
@@ -237,6 +251,10 @@ app.addEventListener("click", (e) => {
   }
   if (act === "anki") {
     bumpAnki(Number(el.dataset.n), el);
+    return;
+  }
+  if (act === "prayer") {
+    togglePrayer(el.dataset.prayer as PrayerKey, el);
     return;
   }
   if (act === "preset-km") {

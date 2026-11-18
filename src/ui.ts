@@ -1,8 +1,9 @@
 import { drawBars, drawLine } from "./charts";
 import { addDays, formatDuration, formatMonthDay, formatPace, formatPrettyDate, isToday, parseISO, todayISO } from "./format";
 import { currentStreak, heatmap, ringProgress, runsThisWeek, runSeries, volumeSeries, type PR } from "./stats";
+import { blankDay } from "./store";
 import type { AppState, DayLog, Range, Tab } from "./types";
-import { EXERCISES } from "./types";
+import { EXERCISES, PRAYERS, prayerCount } from "./types";
 
 export type Ui = {
   tab: Tab;
@@ -15,8 +16,10 @@ const COLORS = {
   pushups: "#f97316",
   pullups: "#38bdf8",
   dips: "#fb7185",
+  squats: "#84cc16",
   anki: "#a78bfa",
   run: "#22c55e",
+  prayer: "#fbbf24",
 };
 
 function icon(name: Tab): string {
@@ -95,14 +98,7 @@ function calendarHtml(date: string, state: AppState): string {
 }
 
 export function renderApp(state: AppState, ui: Ui, prs: PR[]): string {
-  const day = state.logs[ui.date] ?? {
-    date: ui.date,
-    pushups: { reps: 0, sets: 0 },
-    pullups: { reps: 0, sets: 0 },
-    dips: { reps: 0, sets: 0 },
-    anki: 0,
-    runs: [],
-  };
+  const day = state.logs[ui.date] ?? blankDay(ui.date);
   const streak = currentStreak(state);
   const body =
     ui.tab === "today"
@@ -131,17 +127,28 @@ function todayView(state: AppState, ui: Ui, day: DayLog, streak: number): string
   const g = state.goals;
   const runsWeek = runsThisWeek(state, ui.date);
   const rings = [
-    { key: "pushups", label: "Push", value: day.pushups.reps, goal: g.pushups, color: COLORS.pushups },
-    { key: "pullups", label: "Pull", value: day.pullups.reps, goal: g.pullups, color: COLORS.pullups },
-    { key: "dips", label: "Dips", value: day.dips.reps, goal: g.dips, color: COLORS.dips },
+    ...EXERCISES.map((ex) => ({
+      key: ex.key,
+      label: ex.short,
+      value: day[ex.key].reps,
+      goal: g[ex.key],
+      color: COLORS[ex.key],
+    })),
     { key: "anki", label: "Anki", value: day.anki, goal: g.anki, color: COLORS.anki },
+    {
+      key: "salah",
+      label: "Salah",
+      value: prayerCount(day.prayers),
+      goal: PRAYERS.length,
+      color: COLORS.prayer,
+    },
   ];
 
   return `
     <div class="topbar">
       <div class="brand">
         <b>Pulse</b>
-        <span>Train. Study. Keep the chain.</span>
+        <span>Train. Pray. Study. Keep the chain.</span>
       </div>
       <div class="streak">
         <span class="flame">🔥</span>
@@ -185,6 +192,8 @@ function todayView(state: AppState, ui: Ui, day: DayLog, streak: number): string
     </div>
 
     ${EXERCISES.map((ex) => exerciseCard(ex.label, ex.key, day[ex.key], g[ex.key], COLORS[ex.key])).join("")}
+
+    ${prayerCard(day)}
 
     <section class="card">
       <h3>Anki / Master 1 <span>${day.anki} / ${g.anki} cards</span></h3>
@@ -265,6 +274,24 @@ function todayView(state: AppState, ui: Ui, day: DayLog, streak: number): string
   `;
 }
 
+function prayerCard(day: DayLog): string {
+  const done = prayerCount(day.prayers);
+  const pct = ringProgress(done, PRAYERS.length);
+  return `<section class="card" data-card="salah">
+    <h3>Salah <span>${done} / ${PRAYERS.length}</span></h3>
+    <div class="progress"><i style="width:${pct * 100}%;background:${COLORS.prayer}"></i></div>
+    <div class="prayers">
+      ${PRAYERS.map((p) => {
+        const on = day.prayers[p.key];
+        return `<button class="prayer ${on ? "on" : ""}" data-act="prayer" data-prayer="${p.key}" aria-pressed="${on}">
+          <span class="mark">${on ? "✓" : "○"}</span>
+          <span>${p.short}</span>
+        </button>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+
 function exerciseCard(
   label: string,
   key: string,
@@ -332,6 +359,10 @@ function statsView(): string {
         <canvas id="chart-dips"></canvas>
       </section>
       <section class="card chart-card">
+        <h3>Squats</h3>
+        <canvas id="chart-squats"></canvas>
+      </section>
+      <section class="card chart-card">
         <h3>Anki cards</h3>
         <canvas id="chart-anki"></canvas>
       </section>
@@ -371,6 +402,7 @@ function settingsView(state: AppState): string {
         <div><label>Push-ups</label><input class="num" style="width:100%" data-goal="pushups" value="${g.pushups}" inputmode="numeric" /></div>
         <div><label>Pull-ups</label><input class="num" style="width:100%" data-goal="pullups" value="${g.pullups}" inputmode="numeric" /></div>
         <div><label>Dips</label><input class="num" style="width:100%" data-goal="dips" value="${g.dips}" inputmode="numeric" /></div>
+        <div><label>Squats</label><input class="num" style="width:100%" data-goal="squats" value="${g.squats}" inputmode="numeric" /></div>
         <div><label>Anki cards</label><input class="num" style="width:100%" data-goal="anki" value="${g.anki}" inputmode="numeric" /></div>
         <div><label>Runs / week</label><input class="num" style="width:100%" data-goal="weeklyRuns" value="${g.weeklyRuns}" inputmode="numeric" /></div>
       </div>
@@ -418,6 +450,7 @@ export function paintCharts(state: AppState, range: Range): void {
     ["chart-pushups", "pushups", COLORS.pushups],
     ["chart-pullups", "pullups", COLORS.pullups],
     ["chart-dips", "dips", COLORS.dips],
+    ["chart-squats", "squats", COLORS.squats],
     ["chart-anki", "anki", COLORS.anki],
   ] as const;
   for (const [id, key, color] of map) {

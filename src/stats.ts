@@ -1,30 +1,27 @@
 import { addDays, isFiveK, paceSecPerKm, startOfWeek, todayISO } from "./format";
-import type { AppState, DayLog, ExerciseKey } from "./types";
+import { EXERCISES, PRAYERS, prayerCount, type AppState, type DayLog, type ExerciseKey } from "./types";
 
 export function isActive(day: DayLog | undefined): boolean {
   if (!day) return false;
   return (
-    day.pushups.reps > 0 ||
-    day.pullups.reps > 0 ||
-    day.dips.reps > 0 ||
+    EXERCISES.some((ex) => day[ex.key].reps > 0) ||
     day.anki > 0 ||
-    day.runs.length > 0
+    day.runs.length > 0 ||
+    prayerCount(day.prayers) > 0
   );
 }
 
 export function activityScore(day: DayLog | undefined, goals: AppState["goals"]): number {
   if (!day) return 0;
   let n = 0;
-  if (day.pushups.reps > 0) n += 1;
-  if (day.pullups.reps > 0) n += 1;
-  if (day.dips.reps > 0) n += 1;
+  for (const ex of EXERCISES) if (day[ex.key].reps > 0) n += 1;
   if (day.anki > 0) n += 1;
   if (day.runs.length > 0) n += 1;
+  if (prayerCount(day.prayers) > 0) n += 1;
   const completions =
-    (day.pushups.reps >= goals.pushups ? 1 : 0) +
-    (day.pullups.reps >= goals.pullups ? 1 : 0) +
-    (day.dips.reps >= goals.dips ? 1 : 0) +
-    (day.anki >= goals.anki ? 1 : 0);
+    EXERCISES.reduce((sum, ex) => sum + (day[ex.key].reps >= goals[ex.key] ? 1 : 0), 0) +
+    (day.anki >= goals.anki ? 1 : 0) +
+    (prayerCount(day.prayers) === PRAYERS.length ? 1 : 0);
   return Math.min(4, Math.max(n > 0 ? 1 : 0, completions, n >= 3 ? 3 : n));
 }
 
@@ -82,12 +79,12 @@ export type PR = {
 };
 
 export function computePRs(state: AppState): PR[] {
-  let maxPush = 0;
-  let maxPushDate: string | null = null;
-  let maxPull = 0;
-  let maxPullDate: string | null = null;
-  let maxDip = 0;
-  let maxDipDate: string | null = null;
+  const best: Record<ExerciseKey, { reps: number; date: string | null }> = {
+    pushups: { reps: 0, date: null },
+    pullups: { reps: 0, date: null },
+    dips: { reps: 0, date: null },
+    squats: { reps: 0, date: null },
+  };
   let maxAnki = 0;
   let maxAnkiDate: string | null = null;
   let best5k = Infinity;
@@ -97,17 +94,10 @@ export function computePRs(state: AppState): PR[] {
   let bestPaceKm = 0;
 
   for (const day of Object.values(state.logs)) {
-    if (day.pushups.reps > maxPush) {
-      maxPush = day.pushups.reps;
-      maxPushDate = day.date;
-    }
-    if (day.pullups.reps > maxPull) {
-      maxPull = day.pullups.reps;
-      maxPullDate = day.date;
-    }
-    if (day.dips.reps > maxDip) {
-      maxDip = day.dips.reps;
-      maxDipDate = day.date;
+    for (const ex of EXERCISES) {
+      if (day[ex.key].reps > best[ex.key].reps) {
+        best[ex.key] = { reps: day[ex.key].reps, date: day.date };
+      }
     }
     if (day.anki > maxAnki) {
       maxAnki = day.anki;
@@ -130,27 +120,13 @@ export function computePRs(state: AppState): PR[] {
   const streak = longestStreak(state);
 
   return [
-    {
-      kind: "pushups",
-      label: "Push-ups",
-      value: maxPush ? `${maxPush}` : "—",
+    ...EXERCISES.map((ex) => ({
+      kind: ex.key,
+      label: ex.label,
+      value: best[ex.key].reps ? `${best[ex.key].reps}` : "—",
       sub: "best day",
-      date: maxPushDate,
-    },
-    {
-      kind: "pullups",
-      label: "Pull-ups",
-      value: maxPull ? `${maxPull}` : "—",
-      sub: "best day",
-      date: maxPullDate,
-    },
-    {
-      kind: "dips",
-      label: "Dips",
-      value: maxDip ? `${maxDip}` : "—",
-      sub: "best day",
-      date: maxDipDate,
-    },
+      date: best[ex.key].date,
+    })),
     {
       kind: "fivek",
       label: "Fastest 5K",
@@ -201,7 +177,7 @@ export function volumeSeries(
   for (let i = 0; i < n; i++) {
     const date = addDays(start, i);
     const day = state.logs[date];
-    const value = key === "anki" ? day?.anki ?? 0 : day?.[key].reps ?? 0;
+    const value = key === "anki" ? day?.anki ?? 0 : day?.[key]?.reps ?? 0;
     const label = range === "week"
       ? ["S", "M", "T", "W", "T", "F", "S"][new Date(date + "T12:00:00").getDay()]
       : String(new Date(date + "T12:00:00").getDate());
