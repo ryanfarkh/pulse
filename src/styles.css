@@ -492,8 +492,69 @@ textarea, .text {
 }
 .week-chip.deload { border-color: rgba(245, 158, 11, 0.5); }
 .week-chip.deload small { color: var(--amber); }
+.week-chip.now { box-shadow: inset 0 0 0 1px var(--sky); }
 .week-chip.on { background: var(--text); color: #09090b; }
+.week-chip.on.now { box-shadow: inset 0 0 0 2px var(--sky); }
 .week-chip.on.deload small { color: #b45309; }
+
+.camp-start {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "label input" "note note";
+  gap: 6px 10px;
+  align-items: center;
+  margin: -6px 0 12px;
+}
+.camp-start span {
+  grid-area: label;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.camp-start input { grid-area: input; height: 44px; }
+.camp-start em {
+  grid-area: note;
+  color: var(--dim);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.week-plan {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.week-plan button {
+  min-height: 64px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  padding: 6px 1px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  color: var(--muted);
+}
+.week-plan button b { font-size: 12px; color: var(--text); }
+.week-plan button small, .week-plan button em {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.week-plan button.on { background: var(--text); border-color: transparent; }
+.week-plan button.on b, .week-plan button.on small, .week-plan button.on em { color: #09090b; }
+.week-plan button.today:not(.on) { border-color: rgba(56, 189, 248, 0.7); }
+.assign-row { display: grid; gap: 8px; margin-bottom: 12px; }
+.assign-row .field span {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 .deload-banner {
   background: rgba(245, 158, 11, 0.12);

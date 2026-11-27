@@ -9,6 +9,8 @@ export const CAMP_STORAGE_KEY = "pulse.camp.v1";
 
 export const KB_WEIGHTS = [0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12, 13.5, 15] as const;
 
+export type TemplateId = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
 export type ExerciseKind = "strength" | "kettlebell" | "run" | "mobility";
 
 export type ExerciseTemplate = {
@@ -43,6 +45,9 @@ export type WeightMark = { id: string; date: string; kg: number };
 export type CampState = {
   version: 1;
   week: number;
+  startDate: string;
+  defaultLayout: TemplateId[];
+  weekPlans: Record<string, TemplateId[]>;
   logs: Record<string, ExerciseLog>;
   custom: Record<string, ExerciseTemplate[]>;
   pullups: PullupMark[];

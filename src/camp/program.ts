@@ -1,6 +1,13 @@
-import type { ExerciseTemplate } from "./types";
+import type { ExerciseTemplate, TemplateId } from "./types";
 
 export type ProgramDay = {
+  title: string;
+  exercises: ExerciseTemplate[];
+};
+
+export type WorkoutTemplate = {
+  id: TemplateId;
+  short: string;
   title: string;
   exercises: ExerciseTemplate[];
 };
@@ -120,11 +127,37 @@ export const PROGRAM: ProgramDay[] = [
   },
 ];
 
-export function exercisesForDay(day: number, custom: ExerciseTemplate[]): ExerciseTemplate[] {
-  const base = PROGRAM[day]?.exercises ?? [];
-  return [...base, ...custom];
+/** Original weekday slot (Mon=0) before templates could move. */
+export const LEGACY_WEEKDAY_TEMPLATE: TemplateId[] = ["A", "C", "D", "B", "E", "F", "G"];
+
+const TEMPLATE_SOURCES: { id: TemplateId; short: string; source: number }[] = [
+  { id: "A", short: "Gym 1", source: 0 },
+  { id: "B", short: "Gym 2", source: 3 },
+  { id: "C", short: "Pulls", source: 1 },
+  { id: "D", short: "Track", source: 2 },
+  { id: "E", short: "KB", source: 4 },
+  { id: "F", short: "Tempo", source: 5 },
+  { id: "G", short: "Rest", source: 6 },
+];
+
+export const TEMPLATES: WorkoutTemplate[] = TEMPLATE_SOURCES.map((meta) => ({
+  id: meta.id,
+  short: meta.short,
+  title: PROGRAM[meta.source].title,
+  exercises: PROGRAM[meta.source].exercises,
+}));
+
+/** Mon Pulls, Tue Gym 1, Wed Track, Thu KB, Fri Gym 2, Sat Tempo, Sun Rest. */
+export const DEFAULT_LAYOUT: TemplateId[] = ["C", "A", "D", "E", "B", "F", "G"];
+
+export function isTemplateId(value: string): value is TemplateId {
+  return TEMPLATES.some((t) => t.id === value);
 }
 
-export function findExercise(day: number, id: string, custom: ExerciseTemplate[]): ExerciseTemplate | undefined {
-  return exercisesForDay(day, custom).find((e) => e.id === id);
+export function templateById(id: TemplateId): WorkoutTemplate {
+  return TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];
+}
+
+export function exercisesForTemplate(id: TemplateId, custom: ExerciseTemplate[]): ExerciseTemplate[] {
+  return [...templateById(id).exercises, ...custom];
 }

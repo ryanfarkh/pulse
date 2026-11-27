@@ -1,5 +1,7 @@
 import { clamp, todayISO, uid } from "../format";
 import { createStoreNotify } from "../emit";
+import { DEFAULT_LAYOUT, LEGACY_WEEKDAY_TEMPLATE, isTemplateId } from "./program";
+import { CAMP_START_DEFAULT, activeCampWeek, parseLayout, snapToMonday } from "./schedule";
 import {
   CAMP_STORAGE_KEY,
   CAMP_WEEKS,
@@ -11,6 +13,7 @@ import {
   type FiveKMark,
   type PullupMark,
   type SetEntry,
+  type TemplateId,
   type WeightMark,
 } from "./types";
 
@@ -23,7 +26,18 @@ function emptySet(): SetEntry {
 }
 
 function defaultState(): CampState {
-  return { version: 1, week: 1, logs: {}, custom: {}, pullups: [], fivek: [], bodyweight: [] };
+  return {
+    version: 1,
+    week: activeCampWeek(CAMP_START_DEFAULT),
+    startDate: CAMP_START_DEFAULT,
+    defaultLayout: [...DEFAULT_LAYOUT],
+    weekPlans: {},
+    logs: {},
+    custom: {},
+    pullups: [],
+    fivek: [],
+    bodyweight: [],
+  };
 }
 
 function asKind(v: unknown): ExerciseKind {
@@ -75,22 +89,43 @@ function asDate(v: unknown): string {
   return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : todayISO();
 }
 
+function slotTemplate(slot: string): TemplateId | null {
+  if (isTemplateId(slot)) return slot;
+  if (/^[0-6]$/.test(slot)) return LEGACY_WEEKDAY_TEMPLATE[Number(slot)];
+  return null;
+}
+
 function normalize(raw: Partial<CampState> | null): CampState {
   const base = defaultState();
   if (!raw || raw.version !== 1) return base;
   const logs: Record<string, ExerciseLog> = {};
   if (raw.logs && typeof raw.logs === "object") {
     for (const [key, value] of Object.entries(raw.logs)) {
-      if (/^\d+:\d+:.+/.test(key)) logs[key] = asLog(value);
+      const parts = key.split(":");
+      if (parts.length < 3 || !/^\d+$/.test(parts[0])) continue;
+      const template = slotTemplate(parts[1]);
+      if (!template) continue;
+      logs[`${parts[0]}:${template}:${parts.slice(2).join(":")}`] = asLog(value);
     }
   }
   const custom: Record<string, ExerciseTemplate[]> = {};
   if (raw.custom && typeof raw.custom === "object") {
-    for (const [day, list] of Object.entries(raw.custom)) {
-      if (!/^[0-6]$/.test(day) || !Array.isArray(list)) continue;
-      custom[day] = list.map(asTemplate).filter((t): t is ExerciseTemplate => !!t);
+    for (const [slot, list] of Object.entries(raw.custom)) {
+      const template = slotTemplate(slot);
+      if (!template || !Array.isArray(list)) continue;
+      const items = list.map(asTemplate).filter((t): t is ExerciseTemplate => !!t);
+      custom[template] = [...(custom[template] ?? []), ...items];
     }
   }
+  const weekPlans: Record<string, TemplateId[]> = {};
+  if (raw.weekPlans && typeof raw.weekPlans === "object") {
+    for (const [week, layout] of Object.entries(raw.weekPlans)) {
+      const n = Number(week);
+      const parsed = parseLayout(layout);
+      if (n >= 1 && n <= CAMP_WEEKS && parsed) weekPlans[String(n)] = parsed;
+    }
+  }
+  const startDate = snapToMonday(typeof raw.startDate === "string" ? raw.startDate : CAMP_START_DEFAULT);
   const pullups: PullupMark[] = Array.isArray(raw.pullups)
     ? raw.pullups
         .map((m) => {
@@ -127,7 +162,10 @@ function normalize(raw: Partial<CampState> | null): CampState {
     : [];
   return {
     version: 1,
-    week: clamp(Math.round(Number(raw.week) || 1), 1, CAMP_WEEKS),
+    week: clamp(Math.round(Number(raw.week) || activeCampWeek(startDate)), 1, CAMP_WEEKS),
+    startDate,
+    defaultLayout: parseLayout(raw.defaultLayout) ?? [...DEFAULT_LAYOUT],
+    weekPlans,
     logs,
     custom,
     pullups,
@@ -153,8 +191,16 @@ function persist(): void {
   bus.notify();
 }
 
-export function logKey(week: number, day: number, exId: string): string {
-  return `${week}:${day}:${exId}`;
+export function logKey(week: number, template: TemplateId, exId: string): string {
+  return `${week}:${template}:${exId}`;
+}
+
+export function weekLayout(week = state.week): TemplateId[] {
+  return state.weekPlans[String(week)] ?? state.defaultLayout;
+}
+
+export function templateForDay(week: number, day: number): TemplateId {
+  return weekLayout(week)[clamp(day, 0, 6)] ?? "C";
 }
 
 export function getCampState(): CampState {
@@ -172,8 +218,8 @@ export function setCampWeek(week: number): void {
   persist();
 }
 
-export function getExerciseLog(week: number, day: number, exId: string): ExerciseLog {
-  return state.logs[logKey(week, day, exId)] ?? blankLog();
+export function getExerciseLog(week: number, template: TemplateId, exId: string): ExerciseLog {
+  return state.logs[logKey(week, template, exId)] ?? blankLog();
 }
 
 function hasPayload(log: ExerciseLog): boolean {
@@ -189,11 +235,11 @@ function hasPayload(log: ExerciseLog): boolean {
 
 export function patchExercise(
   week: number,
-  day: number,
+  template: TemplateId,
   exId: string,
   patch: (log: ExerciseLog) => void,
 ): ExerciseLog {
-  const key = logKey(week, day, exId);
+  const key = logKey(week, template, exId);
   const log = state.logs[key] ? structuredClone(state.logs[key]) : blankLog();
   patch(log);
   if (!hasPayload(log)) delete state.logs[key];
@@ -208,9 +254,9 @@ export function ensureSet(log: ExerciseLog, index: number, suggested: number): S
   return log.sets[index];
 }
 
-export function copyPreviousWeek(week: number, day: number, exId: string): boolean {
+export function copyPreviousWeek(week: number, template: TemplateId, exId: string): boolean {
   if (week <= 1) return false;
-  const prev = state.logs[logKey(week - 1, day, exId)];
+  const prev = state.logs[logKey(week - 1, template, exId)];
   if (!prev) return false;
   const sets = prev.sets
     .filter((s) => s.reps > 0 || s.weightKg != null)
@@ -226,27 +272,59 @@ export function copyPreviousWeek(week: number, day: number, exId: string): boole
   if (!sets.length && next.distanceKm <= 0 && next.durationSec <= 0 && next.rpe == null && next.mobilityMin <= 0) {
     return false;
   }
-  state.logs[logKey(week, day, exId)] = next;
+  state.logs[logKey(week, template, exId)] = next;
   persist();
   return true;
 }
 
-export function addCustomExercise(day: number, template: Omit<ExerciseTemplate, "id">): ExerciseTemplate {
-  const key = String(day);
-  const exercise: ExerciseTemplate = { ...template, id: uid(), name: template.name.trim().slice(0, 80) };
-  state.custom[key] = [...(state.custom[key] ?? []), exercise];
+export function addCustomExercise(template: TemplateId, exercise: Omit<ExerciseTemplate, "id">): ExerciseTemplate {
+  const created: ExerciseTemplate = { ...exercise, id: uid(), name: exercise.name.trim().slice(0, 80) };
+  state.custom[template] = [...(state.custom[template] ?? []), created];
   persist();
-  return exercise;
+  return created;
 }
 
-export function removeCustomExercise(day: number, id: string): void {
-  const key = String(day);
-  state.custom[key] = (state.custom[key] ?? []).filter((e) => e.id !== id);
-  if (!state.custom[key].length) delete state.custom[key];
+export function removeCustomExercise(template: TemplateId, id: string): void {
+  state.custom[template] = (state.custom[template] ?? []).filter((e) => e.id !== id);
+  if (!state.custom[template].length) delete state.custom[template];
   for (const logId of Object.keys(state.logs)) {
     const parts = logId.split(":");
-    if (parts[1] === key && parts.slice(2).join(":") === id) delete state.logs[logId];
+    if (parts[1] === template && parts.slice(2).join(":") === id) delete state.logs[logId];
   }
+  persist();
+}
+
+export function setCampStart(iso: string): string {
+  const monday = snapToMonday(iso);
+  state.startDate = monday;
+  state.week = activeCampWeek(monday);
+  persist();
+  return monday;
+}
+
+export function assignDayTemplate(week: number, day: number, template: TemplateId): number | null {
+  const layout = [...weekLayout(week)];
+  const from = layout.indexOf(template);
+  const target = clamp(day, 0, 6);
+  if (from < 0 || from === target) return null;
+  const displaced = layout[target];
+  layout[target] = template;
+  layout[from] = displaced;
+  const same = layout.every((id, i) => id === state.defaultLayout[i]);
+  if (same) delete state.weekPlans[String(week)];
+  else state.weekPlans[String(week)] = layout;
+  persist();
+  return from;
+}
+
+export function saveLayoutAsDefault(week: number): void {
+  const layout = [...weekLayout(week)];
+  const previous = state.defaultLayout;
+  for (let w = 1; w < week; w++) {
+    if (!state.weekPlans[String(w)]) state.weekPlans[String(w)] = [...previous];
+  }
+  state.defaultLayout = layout;
+  for (let w = week; w <= CAMP_WEEKS; w++) delete state.weekPlans[String(w)];
   persist();
 }
 

@@ -57,6 +57,7 @@ export type Ui = {
   calendar: boolean;
   calFor: CalFor;
   campDay: number;
+  campSynced: boolean;
   campSheet: CampSheet;
   dietDate: string;
   dietGoals: boolean;

@@ -83,7 +83,7 @@ export function renderAddExerciseModal(): string {
     <button type="button" class="modal-backdrop" data-act="camp-close" aria-label="Close"></button>
     <div class="modal-sheet">
       <div class="topbar">
-        <div class="brand"><b>Add exercise</b><span>Shows on this weekday every camp week</span></div>
+        <div class="brand"><b>Add exercise</b><span>Stays with this workout when you swap days</span></div>
         <button type="button" class="icon-btn" data-act="camp-close" aria-label="Close">×</button>
       </div>
       <div class="field"><label>Name</label><input class="input" data-add="name" maxlength="80" placeholder="Face pulls" /></div>

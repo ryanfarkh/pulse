@@ -2,7 +2,8 @@ import "./styles.css";
 import { bindCampLive, handleCampChange, handleCampClick } from "./camp/actions";
 import { burst, tap, vibrate } from "./confetti";
 import { handleDietChange, handleDietClick } from "./diet/actions";
-import { getCampState, replaceCamp, resetCamp, subscribeCamp } from "./camp/useCampStore";
+import { activeCampWeek } from "./camp/schedule";
+import { getCampState, replaceCamp, resetCamp, setCampWeek, subscribeCamp } from "./camp/useCampStore";
 import { getDietState, replaceDiet, resetDiet, subscribeDiet } from "./diet/useDietStore";
 import { addDays, clamp, mondayIndex, parseDuration, paceSecPerKm, formatPace, todayISO, uid } from "./format";
 import {
@@ -30,6 +31,7 @@ const ui: Ui = {
   calendar: false,
   calFor: "today",
   campDay: mondayIndex(),
+  campSynced: false,
   campSheet: null,
   dietDate: todayISO(),
   dietGoals: false,
@@ -67,8 +69,10 @@ function render(): void {
     const scroller = document.querySelector(".week-scroll") as HTMLElement | null;
     const chip = document.querySelector(".week-chip.on") as HTMLElement | null;
     if (scroller && chip) {
-      const delta = chip.getBoundingClientRect().left - scroller.getBoundingClientRect().left;
-      scroller.scrollLeft += delta - scroller.clientWidth / 2 + chip.clientWidth / 2;
+      const box = scroller.getBoundingClientRect();
+      const rect = chip.getBoundingClientRect();
+      if (rect.left < box.left + 4) scroller.scrollLeft -= box.left - rect.left + 8;
+      else if (rect.right > box.right - 4) scroller.scrollLeft += rect.right - box.right + 8;
     }
   }
   window.scrollTo(0, y);
@@ -238,6 +242,11 @@ app.addEventListener("click", (e) => {
     ui.campSheet = null;
     ui.dietGoals = false;
     ui.calFor = ui.tab === "diet" ? "diet" : "today";
+    if (ui.tab === "camp" && !ui.campSynced) {
+      ui.campSynced = true;
+      ui.campDay = mondayIndex();
+      setCampWeek(activeCampWeek(getCampState().startDate));
+    }
     render();
     return;
   }
@@ -351,12 +360,12 @@ app.addEventListener("click", (e) => {
 });
 
 app.addEventListener("change", (e) => {
-  const el = e.target as HTMLInputElement;
+  const el = e.target as HTMLInputElement | HTMLSelectElement;
   if (el.dataset.act?.startsWith("camp-")) {
     handleCampChange(el, ui, toast);
     return;
   }
-  if (el.dataset.act?.startsWith("diet-")) {
+  if (el.dataset.act?.startsWith("diet-") && el instanceof HTMLInputElement) {
     handleDietChange(el, ui, toast);
     return;
   }

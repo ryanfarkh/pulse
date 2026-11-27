@@ -1,19 +1,25 @@
 import { vibrate } from "../confetti";
-import { clamp, formatPace, parseClock, parseWeight, todayISO, uid } from "../format";
+import { clamp, formatPace, mondayIndex, parseClock, parseWeight, todayISO, uid } from "../format";
 import type { CampSheet, Ui } from "../types";
-import type { ExerciseKind, SetEntry } from "./types";
+import { DAY_NAMES, isTemplateId } from "./program";
+import { activeCampWeek, campDayLabel } from "./schedule";
+import type { ExerciseKind, SetEntry, TemplateId } from "./types";
 import {
   addBodyweight,
   addCustomExercise,
   addFiveK,
   addPullup,
+  assignDayTemplate,
   copyPreviousWeek,
   ensureSet,
   getCampState,
   patchExercise,
   removeBenchmark,
   removeCustomExercise,
+  saveLayoutAsDefault,
+  setCampStart,
   setCampWeek,
+  templateForDay,
 } from "./useCampStore";
 
 function read(selector: string): string {
@@ -21,8 +27,11 @@ function read(selector: string): string {
   return el?.value ?? "";
 }
 
-function dayWeek(ui: Ui): { day: number; week: number } {
-  return { day: clamp(ui.campDay, 0, 6), week: getCampState().week };
+function focus(ui: Ui): { day: number; week: number; template: TemplateId } {
+  const state = getCampState();
+  const day = clamp(ui.campDay, 0, 6);
+  const week = state.week;
+  return { day, week, template: templateForDay(week, day) };
 }
 
 export function handleCampClick(
@@ -32,7 +41,7 @@ export function handleCampClick(
   toast: (message: string) => void,
   render: () => void,
 ): void {
-  const { day, week } = dayWeek(ui);
+  const { week, template } = focus(ui);
   const exId = el.dataset.ex ?? "";
   const suggested = Number(el.dataset.sets || 0);
 
@@ -46,6 +55,18 @@ export function handleCampClick(
     if (!Number.isFinite(next)) return;
     ui.campDay = clamp(next, 0, 6);
     render();
+    return;
+  }
+  if (act === "camp-now") {
+    ui.campSynced = true;
+    ui.campDay = mondayIndex();
+    setCampWeek(activeCampWeek(getCampState().startDate));
+    render();
+    return;
+  }
+  if (act === "camp-save-default") {
+    saveLayoutAsDefault(week);
+    toast("Default layout saved for this week and later weeks");
     return;
   }
   if (act === "camp-open") {
@@ -69,21 +90,21 @@ export function handleCampClick(
     return;
   }
   if (act === "camp-save-add") {
-    saveCustom(day, ui, toast);
+    saveCustom(template, ui, toast);
     return;
   }
   if (act === "camp-copy") {
-    toast(copyPreviousWeek(week, day, exId) ? "Copied last week" : "Nothing logged last week");
+    toast(copyPreviousWeek(week, template, exId) ? "Copied last week" : "Nothing logged last week");
     return;
   }
   if (act === "camp-del-ex") {
-    if (confirm("Remove this exercise from this weekday?")) removeCustomExercise(day, exId);
+    if (confirm("Remove this exercise from this workout?")) removeCustomExercise(template, exId);
     return;
   }
   if (act === "camp-pill") {
     const kg = el.dataset.kg === "bw" ? 0 : Number(el.dataset.kg);
     if (!Number.isFinite(kg)) return;
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       const index = log.sets.findIndex((s) => !s.done);
       const target = index === -1 ? log.sets.length : index;
       ensureSet(log, target, Math.max(suggested, target + 1));
@@ -93,7 +114,7 @@ export function handleCampClick(
     return;
   }
   if (act === "camp-add-set") {
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       if (log.sets.length === 0 && suggested > 0) ensureSet(log, suggested, suggested + 1);
       else log.sets.push({ id: uid(), weightKg: null, reps: 0, done: false });
     });
@@ -101,18 +122,18 @@ export function handleCampClick(
   }
   if (act === "camp-del-set") {
     const id = el.dataset.id;
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       log.sets = log.sets.filter((s) => s.id !== id);
     });
     return;
   }
   if (act === "camp-done") {
-    toggleDone(week, day, exId, el, suggested);
+    toggleDone(week, template, exId, el, suggested);
     vibrate();
     return;
   }
   if (act === "camp-mob") {
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       log.mobilityDone = !log.mobilityDone;
     });
     vibrate();
@@ -121,16 +142,16 @@ export function handleCampClick(
   if (act === "camp-rpe") {
     const n = Number(el.dataset.n);
     if (!Number.isFinite(n)) return;
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       log.rpe = log.rpe === n ? null : n;
     });
   }
 }
 
-function toggleDone(week: number, day: number, exId: string, el: HTMLElement, suggested: number): void {
+function toggleDone(week: number, template: TemplateId, exId: string, el: HTMLElement, suggested: number): void {
   const id = el.dataset.id;
   const indexAttr = el.dataset.index;
-  patchExercise(week, day, exId, (log) => {
+  patchExercise(week, template, exId, (log) => {
     if (id) {
       const row = log.sets.find((s) => s.id === id);
       if (row) row.done = !row.done;
@@ -179,7 +200,7 @@ function saveBenchmark(sheet: string, ui: Ui, toast: (message: string) => void):
   }
 }
 
-function saveCustom(day: number, ui: Ui, toast: (message: string) => void): void {
+function saveCustom(template: TemplateId, ui: Ui, toast: (message: string) => void): void {
   const name = read("[data-add=name]").trim();
   if (!name) {
     toast("Name the exercise");
@@ -191,7 +212,7 @@ function saveCustom(day: number, ui: Ui, toast: (message: string) => void): void
   const target = read("[data-add=target]").trim();
   const bw = (document.querySelector("[data-add=bw]") as HTMLInputElement | null)?.checked ?? false;
   ui.campSheet = null;
-  addCustomExercise(day, {
+  addCustomExercise(template, {
     name,
     target,
     kind: safeKind,
@@ -201,16 +222,30 @@ function saveCustom(day: number, ui: Ui, toast: (message: string) => void): void
   toast("Exercise added");
 }
 
-export function handleCampChange(el: HTMLInputElement, ui: Ui, toast: (message: string) => void): void {
+export function handleCampChange(el: HTMLInputElement | HTMLSelectElement, ui: Ui, toast: (message: string) => void): void {
   const act = el.dataset.act;
-  const { day, week } = dayWeek(ui);
+  const { day, week, template } = focus(ui);
   const exId = el.dataset.ex ?? "";
   const suggested = Number(el.dataset.sets || 0);
 
+  if (act === "camp-start") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
+    ui.campSynced = true;
+    const monday = setCampStart(el.value);
+    toast(monday === el.value ? "Camp start saved" : `Weeks start Monday · ${campDayLabel(monday)}`);
+    return;
+  }
+  if (act === "camp-assign") {
+    if (!isTemplateId(el.value)) return;
+    const from = assignDayTemplate(week, day, el.value);
+    if (from == null) return;
+    toast(`Swapped with ${DAY_NAMES[from]}`);
+    return;
+  }
   if (act === "camp-weight" || act === "camp-reps") {
     const id = el.dataset.id;
     const indexAttr = el.dataset.index;
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       let row: SetEntry | undefined;
       if (id) row = log.sets.find((s) => s.id === id);
       else if (indexAttr != null) row = ensureSet(log, Number(indexAttr), suggested);
@@ -225,7 +260,7 @@ export function handleCampChange(el: HTMLInputElement, ui: Ui, toast: (message: 
   }
   if (act === "camp-run-km" || act === "camp-run-time" || act === "camp-mob-min") {
     let invalid = false;
-    patchExercise(week, day, exId, (log) => {
+    patchExercise(week, template, exId, (log) => {
       if (act === "camp-run-km") {
         const n = Number(el.value);
         log.distanceKm = Number.isFinite(n) ? clamp(Math.round(n * 100) / 100, 0, 200) : 0;

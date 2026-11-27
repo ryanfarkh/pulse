@@ -3,6 +3,7 @@ import type { Ui } from "../types";
 import { renderAddExerciseModal, renderBenchmarkModal } from "./BenchmarkModal";
 import { renderCampDayView } from "./CampDayView";
 import { fivekSnapshot, pullupSnapshot, weightSnapshot } from "./metrics";
+import { activeCampWeek, campDate, campDayLabel, mondayTitle } from "./schedule";
 import {
   BW_BASELINE,
   CAMP_WEEKS,
@@ -22,6 +23,8 @@ function bar(pct: number, hit: boolean): string {
 export function renderCampDashboard(ui: Ui): string {
   const state = getCampState();
   const week = state.week;
+  const active = activeCampWeek(state.startDate);
+  const viewed = campDate(state.startDate, week, ui.campDay);
   const deload = isDeload(week);
   const pull = pullupSnapshot(state.pullups);
   const five = fivekSnapshot(state.fivek);
@@ -32,7 +35,8 @@ export function renderCampDashboard(ui: Ui): string {
     const n = i + 1;
     const on = n === week ? "on" : "";
     const mark = isDeload(n) ? "deload" : "";
-    return `<button type="button" class="week-chip ${on} ${mark}" data-act="camp-week" data-week="${n}" aria-pressed="${n === week}">
+    const now = n === active ? "now" : "";
+    return `<button type="button" class="week-chip ${on} ${mark} ${now}" data-act="camp-week" data-week="${n}" aria-pressed="${n === week}">
       <b>W${n}</b>
       ${isDeload(n) ? "<small>Deload</small>" : "<small>&nbsp;</small>"}
     </button>`;
@@ -41,9 +45,15 @@ export function renderCampDashboard(ui: Ui): string {
   return `<div class="topbar">
       <div class="brand">
         <b>Camp</b>
-        <span>Week ${week} of ${CAMP_WEEKS}${deload ? " · Deload week" : ""} · 12-week block</span>
+        <span>Week ${week} of ${CAMP_WEEKS}${deload ? " · Deload week" : ""} · ${campDayLabel(viewed)}</span>
       </div>
+      ${active === week ? "" : `<button type="button" class="ghost tool" data-act="camp-now">Week ${active}</button>`}
     </div>
+    <label class="camp-start">
+      <span>Camp start</span>
+      <input id="camp-start" class="input" type="date" data-act="camp-start" value="${state.startDate}" />
+      <em>${mondayTitle(state.startDate)}</em>
+    </label>
     <div class="week-scroll">${weeks}</div>
     ${deload ? `<div class="deload-banner">Deload week — keep the movements, cut load, and leave more reps in reserve.</div>` : ""}
     <div class="bench-grid">
